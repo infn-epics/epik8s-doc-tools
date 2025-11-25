@@ -3,7 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const yaml = require('yaml');
-
+/*
+http://<beamline>-dbwr.<epik8namespace>/dbwr/view.jsp?display=https://<beamline>-docs..<epik8namespace>/control/<ioc>/<bobfile>
+*/
 /**
  * Extract metadata from start.log file
  */
@@ -36,7 +38,11 @@ function makeUrlsClickable(text) {
 function loadIocList(valuesFile) {
     const content = fs.readFileSync(valuesFile, 'utf8');
     const values = yaml.parse(content);
-    return values.epicsConfiguration?.iocs || [];
+    return {
+        iocs: values.epicsConfiguration?.iocs || [],
+        beamline: values.beamline || '',
+        epik8namespace: values.epik8namespace || ''
+    };
 }
 
 /**
@@ -88,8 +94,13 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
     let allowedIocs = null;
     let iocConfigs = {};
     let services = [];
+    let beamline = '';
+    let epik8namespace = '';
     if (valuesFile) {
-        const iocsData = loadIocList(valuesFile);
+        const data = loadIocList(valuesFile);
+        const iocsData = data.iocs;
+        beamline = data.beamline;
+        epik8namespace = data.epik8namespace;
         allowedIocs = iocsData.map(ioc => ioc.name);
         iocConfigs = iocsData.reduce((acc, ioc) => {
             acc[ioc.name] = ioc;
@@ -157,6 +168,15 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
             pvCount = pvlistContent.trim().split('\n').filter(line => line.trim()).length;
         }
         
+        // Check for .bob files
+        let bobLink = '';
+        const bobFiles = fs.readdirSync(iocPath).filter(f => f.endsWith('.bob'));
+        if (bobFiles.length > 0 && beamline && epik8namespace) {
+            const bobfile = bobFiles[0]; // Take the first one
+            const url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs..${epik8namespace}/control/${iocName}/${bobfile}`;
+            bobLink = url;
+        }
+        
         // Generate markdown file
         const mdPath = path.join(controlDir, `${iocName}.md`);
         
@@ -164,6 +184,9 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
         const navLinks = [];
         if (iocAsset) {
             navLinks.push(`- [IOC Asset Documentation](${iocAsset})`);
+        }
+        if (bobLink) {
+            navLinks.push('- [Phoebus Display](#phoebus)');
         }
         navLinks.push('- [Start Log](#startlog)');
         if (yamlContent) {
@@ -219,6 +242,16 @@ ${iocDesc}
 `;
         }
         
+        let phoebusSection = '';
+        if (bobLink) {
+            phoebusSection = `
+## Phoebus Display {#phoebus}
+
+[View in Phoebus](${bobLink})
+
+`;
+        }
+        
         const mdContent = `---
 title: "${iocName}"
 linkTitle: "${iocName}"
@@ -237,7 +270,7 @@ ${navLinks.join('\n')}
 \`\`\`
 ${startLogContent}
 \`\`\`
-${descSection}${yamlSection}${stcmdSection}${pvlistSection}
+${descSection}${phoebusSection}${yamlSection}${stcmdSection}${pvlistSection}
 `;
         
         // Ensure control directory exists
