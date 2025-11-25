@@ -173,7 +173,7 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
         const bobFiles = fs.readdirSync(iocPath).filter(f => f.endsWith('.bob'));
         if (bobFiles.length > 0 && beamline && epik8namespace) {
             const bobfile = bobFiles[0]; // Take the first one
-            const url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs..${epik8namespace}/control/${iocName}/${bobfile}`;
+            const url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${bobfile}`;
             bobLink = url;
         }
         
