@@ -247,6 +247,23 @@ ${descSection}${yamlSection}${stcmdSection}${pvlistSection}
         
         fs.writeFileSync(mdPath, mdContent);
         
+        // Copy IOC directory to control directory only if valuesFile is provided (filtered IOCs)
+        if (valuesFile) {
+            const iocDestPath = path.join(controlDir, iocName);
+            if (!fs.existsSync(iocDestPath)) {
+                fs.mkdirSync(iocDestPath, { recursive: true });
+            }
+            // Copy files from iocPath to iocDestPath
+            const files = fs.readdirSync(iocPath);
+            for (const file of files) {
+                const srcFile = path.join(iocPath, file);
+                const destFile = path.join(iocDestPath, file);
+                if (fs.statSync(srcFile).isFile()) {
+                    fs.copyFileSync(srcFile, destFile);
+                }
+            }
+        }
+        
         const assetInfo = iocAsset ? ` | Asset: ${iocAsset.substring(0, 40)}...` : '';
         console.log(`Updated: ${mdPath} (PVs: ${pvCount})${assetInfo}`);
     }
