@@ -279,7 +279,8 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
                         if (iocprefix) {
                             macros.P = iocprefix;
                         }
-                        macros.R = iocName;
+                        const iocroot = iocConfigs[iocName].iocroot || '';
+                        macros.R = iocroot ? iocroot + ":" + iocName : iocName;
                         if (valuesFile) {
                             macros.CONFFILE = valuesFile;
                         }
@@ -298,24 +299,52 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
         // Check for .bob files in opi subdirectory
         const opiSubdir = path.join(iocPath, 'opi');
         if (fs.existsSync(opiSubdir)) {
-            const bobFiles = fs.readdirSync(opiSubdir).filter(f => f.endsWith('.bob'));
-            for (const bobFile of bobFiles) {
-                if (beamline && epik8namespace) {
-                    let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${bobFile}`;
-                    const macros = {};
-                    const iocprefix = iocConfigs[iocName].iocprefix || '';
-                    if (iocprefix) {
-                        macros.P = iocprefix;
+            if (iocConfigs[iocName].devices && iocConfigs[iocName].devices.length > 0) {
+                for (const device of iocConfigs[iocName].devices) {
+                    const bobFile = device.name + '.bob';
+                    const bobPath = path.join(opiSubdir, bobFile);
+                    if (fs.existsSync(bobPath)) {
+                        if (beamline && epik8namespace) {
+                            let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${bobFile}`;
+                            const macros = {};
+                            const iocprefix = iocConfigs[iocName].iocprefix || '';
+                            if (iocprefix) {
+                                macros.P = iocprefix;
+                            }
+                            const iocroot = iocConfigs[iocName].iocroot || '';
+                            macros.R = iocroot ? iocroot + ":" + device.name : device.name;
+                            if (valuesFile) {
+                                macros.CONFFILE = valuesFile;
+                            }
+                            const macrosJson = JSON.stringify(macros);
+                            const encodedMacros = encodeURIComponent(macrosJson);
+                            url += `&macros=${encodedMacros}`;
+                            phoebusLinks.push({ name: device.name, url: url });
+                            console.log(`Created Phoebus link for ${device.name} (${bobFile}) in opi subdir: ${url}`);
+                        }
                     }
-                    macros.R = iocName;
-                    if (valuesFile) {
-                        macros.CONFFILE = valuesFile;
+                }
+            } else {
+                const bobFiles = fs.readdirSync(opiSubdir).filter(f => f.endsWith('.bob'));
+                for (const bobFile of bobFiles) {
+                    if (beamline && epik8namespace) {
+                        let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${bobFile}`;
+                        const macros = {};
+                        const iocprefix = iocConfigs[iocName].iocprefix || '';
+                        if (iocprefix) {
+                            macros.P = iocprefix;
+                        }
+                        const iocroot = iocConfigs[iocName].iocroot || '';
+                        macros.R = iocroot ? iocroot + ":" + iocName : iocName;
+                        if (valuesFile) {
+                            macros.CONFFILE = valuesFile;
+                        }
+                        const macrosJson = JSON.stringify(macros);
+                        const encodedMacros = encodeURIComponent(macrosJson);
+                        url += `&macros=${encodedMacros}`;
+                        phoebusLinks.push({ name: bobFile.replace('.bob', ''), url: url });
+                        console.log(`Created Phoebus link for ${bobFile} in opi subdir: ${url}`);
                     }
-                    const macrosJson = JSON.stringify(macros);
-                    const encodedMacros = encodeURIComponent(macrosJson);
-                    url += `&macros=${encodedMacros}`;
-                    phoebusLinks.push({ name: bobFile.replace('.bob', ''), url: url });
-                    console.log(`Created Phoebus link for ${bobFile} in opi subdir: ${url}`);
                 }
             }
         }
@@ -333,7 +362,8 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
                     if (iocprefix) {
                         macros.P = iocprefix;
                     }
-                    macros.R = iocName;
+                    const iocroot = iocConfigs[iocName].iocroot || '';
+                    macros.R = iocroot ? iocroot + ":" + iocName : iocName;
                     if (valuesFile) {
                         macros.CONFFILE = valuesFile;
                     }
