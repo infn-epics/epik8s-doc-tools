@@ -144,6 +144,12 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
         const iocPath = path.join(iocinfoDir, iocName);
         const startLog = path.join(iocPath, 'start.log');
         
+        // Define iocDestPath if valuesFile is provided
+        let iocDestPath = null;
+        if (valuesFile) {
+            iocDestPath = path.join(controlDir, iocName);
+        }
+        
         // Extract metadata
         const metadata = extractIocMetadata(startLog);
         const devgroup = metadata['IOC Device Group'] || 'other';
@@ -219,10 +225,11 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
                         }
                         if (opiPath && fs.existsSync(opiPath)) {
                             const opiFile = path.basename(opiPath);
+                            const relativePath = path.relative(controlDir, opiPath).replace(/\\/g, '/');
                             
                             // Create Phoebus link with macros
                             if (beamline && epik8namespace) {
-                                let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${opiFile}`;
+                                let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${relativePath}`;
                                 const macros = {};
                                 const iocprefix = iocConfigs[iocName].iocprefix || '';
                                 if (iocprefix) {
@@ -238,6 +245,8 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
                                 phoebusLinks.push({ name: device.name, url: url });
                                 console.log(`Created Phoebus link for ${device.name}: ${url}`);
                             }
+                            
+                            // No need to copy, link directly
                         }
                     }
                 }
@@ -259,10 +268,11 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
                 }
                 if (opiPath && fs.existsSync(opiPath)) {
                     const opiFile = path.basename(opiPath);
+                    const relativePath = path.relative(controlDir, opiPath).replace(/\\/g, '/');
                     
                     // Create Phoebus link with macros
                     if (beamline && epik8namespace) {
-                        let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${opiFile}`;
+                        let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${relativePath}`;
                         const macros = {};
                         const iocprefix = iocConfigs[iocName].iocprefix || '';
                         if (iocprefix) {
@@ -278,6 +288,8 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
                         phoebusLinks.push({ name: iocName, url: url });
                         console.log(`Created Phoebus link for ${iocName}: ${url}`);
                     }
+                    
+                    // No need to copy, link directly
                 }
             }
         }
@@ -303,6 +315,32 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
                     url += `&macros=${encodedMacros}`;
                     phoebusLinks.push({ name: bobFile.replace('.bob', ''), url: url });
                     console.log(`Created Phoebus link for ${bobFile} in opi subdir: ${url}`);
+                }
+            }
+        }
+        
+        // Check for .bob files in global opiDir that match the IOC name
+        if (opiDir) {
+            const globalBobFiles = fs.readdirSync(opiDir).filter(f => f.endsWith('.bob') && f.toLowerCase().startsWith(iocName.toLowerCase()));
+            for (const bobFile of globalBobFiles) {
+                if (beamline && epik8namespace) {
+                    const bobPath = path.join(opiDir, bobFile);
+                    const relativePath = path.relative(controlDir, bobPath).replace(/\\/g, '/');
+                    let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${relativePath}`;
+                    const macros = {};
+                    const iocprefix = iocConfigs[iocName].iocprefix || '';
+                    if (iocprefix) {
+                        macros.P = iocprefix;
+                    }
+                    macros.R = iocName;
+                    if (valuesFile) {
+                        macros.CONFFILE = valuesFile;
+                    }
+                    const macrosJson = JSON.stringify(macros);
+                    const encodedMacros = encodeURIComponent(macrosJson);
+                    url += `&macros=${encodedMacros}`;
+                    phoebusLinks.push({ name: bobFile.replace('.bob', ''), url: url });
+                    console.log(`Created Phoebus link for global ${bobFile}: ${url}`);
                 }
             }
         }
@@ -412,7 +450,7 @@ ${descSection}${phoebusSection}${yamlSection}${stcmdSection}${pvlistSection}
         
         // Copy IOC directory to control directory only if valuesFile is provided (filtered IOCs)
         if (valuesFile) {
-            const iocDestPath = path.join(controlDir, iocName);
+            // iocDestPath already defined above
             if (!fs.existsSync(iocDestPath)) {
                 fs.mkdirSync(iocDestPath, { recursive: true });
             }
@@ -439,6 +477,18 @@ ${descSection}${phoebusSection}${yamlSection}${stcmdSection}${pvlistSection}
                     fs.copyFileSync(path.join(opiSrcPath, file), path.join(opiDestPath, file));
                 }
             }
+            
+            // Copy matched global .bob files - no longer needed, link directly
+            // if (opiDir) {
+            //     const globalBobFiles = fs.readdirSync(opiDir).filter(f => f.endsWith('.bob') && f.toLowerCase().startsWith(iocName.toLowerCase()));
+            //     for (const bobFile of globalBobFiles) {
+            //         const srcFile = path.join(opiDir, bobFile);
+            //         const destFile = path.join(iocDestPath, bobFile);
+            //         if (fs.existsSync(srcFile)) {
+            //             fs.copyFileSync(srcFile, destFile);
+            //         }
+            //     }
+            // }
         }
         
         const assetInfo = iocAsset ? ` | Asset: ${iocAsset.substring(0, 40)}...` : '';
