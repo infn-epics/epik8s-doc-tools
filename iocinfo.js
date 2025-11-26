@@ -235,7 +235,8 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
                                 if (iocprefix) {
                                     macros.P = iocprefix;
                                 }
-                                macros.R = device.name;
+                                const iocroot = iocConfigs[iocName].iocroot || '';
+                                macros.R = iocroot ? iocroot + ":" + device.name : device.name;
                                 if (valuesFile) {
                                     macros.CONFFILE = valuesFile;
                                 }
