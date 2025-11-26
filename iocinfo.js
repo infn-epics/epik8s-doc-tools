@@ -6,6 +6,14 @@ const yaml = require('yaml');
 /*
 http://<beamline>-dbwr.<epik8namespace>/dbwr/view.jsp?display=https://<beamline>-docs..<epik8namespace>/control/<ioc>/<bobfile>
 */
+
+/**
+ * Convert URLs in text to markdown links
+ */
+function makeUrlsClickable(text) {
+    const urlPattern = /(https?:\/\/[^\s]+)/g;
+    return text.replace(urlPattern, '[$1]($1)');
+}
 /**
  * Extract metadata from start.log file
  */
@@ -25,11 +33,21 @@ function extractIocMetadata(startLogPath) {
 }
 
 /**
- * Convert URLs in text to markdown links
+ * Find a file recursively in a directory
  */
-function makeUrlsClickable(text) {
-    const urlPattern = /(https?:\/\/[^\s]+)/g;
-    return text.replace(urlPattern, '[$1]($1)');
+function findFile(dir, filename) {
+    const files = fs.readdirSync(dir);
+    for (const file of files) {
+        const fullPath = path.join(dir, file);
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+            const found = findFile(fullPath, filename);
+            if (found) return found;
+        } else if (file === filename) {
+            return fullPath;
+        }
+    }
+    return null;
 }
 
 /**
@@ -89,7 +107,7 @@ function loadServicesWithIngress(valuesFile) {
 /**
  * Generate IOC documentation pages
  */
-function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/services') {
+function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/services', opiDir = null) {
     // Load IOC list from values.yaml if provided
     let allowedIocs = null;
     let iocConfigs = {};
@@ -175,6 +193,60 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
             const bobfile = bobFiles[0]; // Take the first one
             const url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${bobfile}`;
             bobLink = url;
+        }
+        
+        // Check for OPI file from config
+        let opiFile = null;
+        if (opiDir && iocConfigs[iocName] && iocConfigs[iocName].opi) {
+            let opiPath = path.join(opiDir, iocConfigs[iocName].opi);
+            console.log(`Searching for OPI file for IOC ${iocName}: ${opiPath}`);
+            if (!fs.existsSync(opiPath)) {
+                // Try recursive search
+                const filename = path.basename(iocConfigs[iocName].opi);
+                opiPath = findFile(opiDir, filename);
+                if (opiPath) {
+                    console.log(`Found OPI file recursively: ${opiPath}`);
+                } else {
+                    console.log(`OPI file not found: ${opiPath}`);
+                }
+            }
+            if (opiPath && fs.existsSync(opiPath)) {
+                opiFile = path.basename(opiPath);
+                const destOpiPath = path.join(controlDir, iocName, opiFile);
+                // Ensure directory exists
+                const destDir = path.dirname(destOpiPath);
+                if (!fs.existsSync(destDir)) {
+                    fs.mkdirSync(destDir, { recursive: true });
+                }
+                fs.copyFileSync(opiPath, destOpiPath);
+                console.log(`Found and copied OPI file: ${opiPath} -> ${destOpiPath}`);
+                
+                // Create Phoebus link with macros
+                if (beamline && epik8namespace) {
+                    let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${opiFile}`;
+                    const macros = {};
+                    const iocprefix = iocConfigs[iocName].iocprefix || '';
+                    let iocroot = iocName;
+                    if (iocConfigs[iocName].devices && iocConfigs[iocName].devices.length > 0) {
+                        iocroot = iocConfigs[iocName].devices[0].name;
+                    }
+                    if (iocprefix) {
+                        macros.P = iocprefix;
+                    }
+                    if (iocroot) {
+                        macros.R = iocroot;
+                    }
+                    if (Object.keys(macros).length > 0) {
+                        const macrosJson = JSON.stringify(macros);
+                        const encodedMacros = encodeURIComponent(macrosJson);
+                        url += `&macros=${encodedMacros}`;
+                    }
+                    bobLink = url;
+                    console.log(`Created Phoebus link with macros: ${url}`);
+                }
+            } else {
+                console.log(`OPI file not found: ${opiPath}`);
+            }
         }
         
         // Generate markdown file
@@ -287,11 +359,12 @@ ${descSection}${phoebusSection}${yamlSection}${stcmdSection}${pvlistSection}
                 fs.mkdirSync(iocDestPath, { recursive: true });
             }
             // Copy files from iocPath to iocDestPath
+            const allowedExtensions = ['.bob', '.yaml', '.txt', '.log', '.md','.html'];
             const files = fs.readdirSync(iocPath);
             for (const file of files) {
                 const srcFile = path.join(iocPath, file);
                 const destFile = path.join(iocDestPath, file);
-                if (fs.statSync(srcFile).isFile()) {
+                if (fs.statSync(srcFile).isFile() && allowedExtensions.includes(path.extname(srcFile))) {
                     fs.copyFileSync(srcFile, destFile);
                 }
             }
@@ -363,6 +436,7 @@ if (require.main === module) {
     let controlDir = 'content/control';
     let servicesDir = 'content/services';
     let valuesFile = null;
+    let opiDir = null;
     
     for (let i = 0; i < args.length; i++) {
         if (args[i] === '--iocinfo-dir' && i + 1 < args.length) {
@@ -377,6 +451,9 @@ if (require.main === module) {
         } else if (args[i] === '--values-file' && i + 1 < args.length) {
             valuesFile = args[i + 1];
             i++;
+        } else if (args[i] === '--opi-dir' && i + 1 < args.length) {
+            opiDir = args[i + 1];
+            i++;
         } else if (args[i] === '--help' || args[i] === '-h') {
             console.log('Usage: node iocinfo.js [options]');
             console.log('');
@@ -385,12 +462,13 @@ if (require.main === module) {
             console.log('  --control-dir <path>   Output directory for control documentation (default: content/control)');
             console.log('  --services-dir <path>  Output directory for services documentation (default: content/services)');
             console.log('  --values-file <path>   Path to values.yaml file to filter IOCs by epicsConfiguration.iocs list');
+            console.log('  --opi-dir <path>       Directory containing OPI files referenced in IOC configurations');
             console.log('  --help, -h             Show this help message');
             process.exit(0);
         }
     }
     
-    main(iocinfoDir, controlDir, valuesFile, servicesDir);
+    main(iocinfoDir, controlDir, valuesFile, servicesDir, opiDir);
 }
 
 module.exports = { main, extractIocMetadata, makeUrlsClickable };
