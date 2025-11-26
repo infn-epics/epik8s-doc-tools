@@ -195,57 +195,90 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
             bobLink = url;
         }
         
-        // Check for OPI file from config
-        let opiFile = null;
-        if (opiDir && iocConfigs[iocName] && iocConfigs[iocName].opi) {
-            let opiPath = path.join(opiDir, iocConfigs[iocName].opi);
-            console.log(`Searching for OPI file for IOC ${iocName}: ${opiPath}`);
-            if (!fs.existsSync(opiPath)) {
-                // Try recursive search
-                const filename = path.basename(iocConfigs[iocName].opi);
-                opiPath = findFile(opiDir, filename);
-                if (opiPath) {
-                    console.log(`Found OPI file recursively: ${opiPath}`);
-                } else {
-                    console.log(`OPI file not found: ${opiPath}`);
+        // Check for OPI files from config
+        const phoebusLinks = [];
+        if (opiDir && iocConfigs[iocName]) {
+            console.log(`Checking OPI for ${iocName}: opiDir=${opiDir}, opi=${iocConfigs[iocName]?.opi}`);
+            if (iocConfigs[iocName].devices && iocConfigs[iocName].devices.length > 0) {
+                // Per device
+                for (const device of iocConfigs[iocName].devices) {
+                    const deviceOpi = device.opi || iocConfigs[iocName].opi;
+                    if (deviceOpi) {
+                        let opiPath = path.join(opiDir, deviceOpi);
+                        console.log(`Searching for OPI file for device ${device.name}: ${opiPath}`);
+                        if (!fs.existsSync(opiPath)) {
+                            // Try recursive search
+                            const filename = path.basename(deviceOpi);
+                            opiPath = findFile(opiDir, filename);
+                            if (opiPath) {
+                                console.log(`Found OPI file recursively: ${opiPath}`);
+                            } else {
+                                console.log(`OPI file not found: ${opiPath}`);
+                                continue;
+                            }
+                        }
+                        if (opiPath && fs.existsSync(opiPath)) {
+                            const opiFile = path.basename(opiPath);
+                            
+                            // Create Phoebus link with macros
+                            if (beamline && epik8namespace) {
+                                let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${opiFile}`;
+                                const macros = {};
+                                const iocprefix = iocConfigs[iocName].iocprefix || '';
+                                if (iocprefix) {
+                                    macros.P = iocprefix;
+                                }
+                                macros.R = device.name;
+                                if (valuesFile) {
+                                    macros.CONFFILE = valuesFile;
+                                }
+                                const macrosJson = JSON.stringify(macros);
+                                const encodedMacros = encodeURIComponent(macrosJson);
+                                url += `&macros=${encodedMacros}`;
+                                phoebusLinks.push({ name: device.name, url: url });
+                                console.log(`Created Phoebus link for ${device.name}: ${url}`);
+                            }
+                        }
+                    }
                 }
             }
-            if (opiPath && fs.existsSync(opiPath)) {
-                opiFile = path.basename(opiPath);
-                const destOpiPath = path.join(controlDir, iocName, opiFile);
-                // Ensure directory exists
-                const destDir = path.dirname(destOpiPath);
-                if (!fs.existsSync(destDir)) {
-                    fs.mkdirSync(destDir, { recursive: true });
+            if (iocConfigs[iocName].opi && (!iocConfigs[iocName].devices || iocConfigs[iocName].devices.length === 0)) {
+                console.log(`Condition met for IOC ${iocName}`);
+                // IOC level
+                let opiPath = path.join(opiDir, iocConfigs[iocName].opi);
+                console.log(`Searching for OPI file for IOC ${iocName}: ${opiPath}`);
+                if (!fs.existsSync(opiPath)) {
+                    // Try recursive search
+                    const filename = path.basename(iocConfigs[iocName].opi);
+                    opiPath = findFile(opiDir, filename);
+                    if (opiPath) {
+                        console.log(`Found OPI file recursively: ${opiPath}`);
+                    } else {
+                        console.log(`OPI file not found: ${opiPath}`);
+                    }
                 }
-                fs.copyFileSync(opiPath, destOpiPath);
-                console.log(`Found and copied OPI file: ${opiPath} -> ${destOpiPath}`);
-                
-                // Create Phoebus link with macros
-                if (beamline && epik8namespace) {
-                    let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${opiFile}`;
-                    const macros = {};
-                    const iocprefix = iocConfigs[iocName].iocprefix || '';
-                    let iocroot = iocName;
-                    if (iocConfigs[iocName].devices && iocConfigs[iocName].devices.length > 0) {
-                        iocroot = iocConfigs[iocName].devices[0].name;
-                    }
-                    if (iocprefix) {
-                        macros.P = iocprefix;
-                    }
-                    if (iocroot) {
-                        macros.R = iocroot;
-                    }
-                    if (Object.keys(macros).length > 0) {
+                if (opiPath && fs.existsSync(opiPath)) {
+                    const opiFile = path.basename(opiPath);
+                    
+                    // Create Phoebus link with macros
+                    if (beamline && epik8namespace) {
+                        let url = `http://${beamline}-dbwr.${epik8namespace}/dbwr/view.jsp?display=https://${beamline}-docs.${epik8namespace}/control/${iocName}/${opiFile}`;
+                        const macros = {};
+                        const iocprefix = iocConfigs[iocName].iocprefix || '';
+                        if (iocprefix) {
+                            macros.P = iocprefix;
+                        }
+                        macros.R = iocName;
+                        if (valuesFile) {
+                            macros.CONFFILE = valuesFile;
+                        }
                         const macrosJson = JSON.stringify(macros);
                         const encodedMacros = encodeURIComponent(macrosJson);
                         url += `&macros=${encodedMacros}`;
+                        phoebusLinks.push({ name: iocName, url: url });
+                        console.log(`Created Phoebus link for ${iocName}: ${url}`);
                     }
-                    bobLink = url;
-                    console.log(`Created Phoebus link with macros: ${url}`);
                 }
-            } else {
-                console.log(`OPI file not found: ${opiPath}`);
             }
         }
         
@@ -257,7 +290,7 @@ function main(iocinfoDir, controlDir, valuesFile = null, servicesDir = 'content/
         if (iocAsset) {
             navLinks.push(`- [IOC Asset Documentation](${iocAsset})`);
         }
-        if (bobLink) {
+        if (phoebusLinks.length > 0) {
             navLinks.push('- [Phoebus Display](#phoebus)');
         }
         navLinks.push('- [Start Log](#startlog)');
@@ -315,11 +348,11 @@ ${iocDesc}
         }
         
         let phoebusSection = '';
-        if (bobLink) {
+        if (phoebusLinks.length > 0) {
             phoebusSection = `
 ## Phoebus Display {#phoebus}
 
-[View in Phoebus](${bobLink})
+${phoebusLinks.map(link => `- [${link.name}](${link.url})`).join('\n')}
 
 `;
         }
@@ -359,7 +392,7 @@ ${descSection}${phoebusSection}${yamlSection}${stcmdSection}${pvlistSection}
                 fs.mkdirSync(iocDestPath, { recursive: true });
             }
             // Copy files from iocPath to iocDestPath
-            const allowedExtensions = ['.bob', '.yaml', '.txt', '.log', '.md','.html'];
+            const allowedExtensions = ['.bob', '.yaml', '.txt', '.log', '.md','.html','.opi'];
             const files = fs.readdirSync(iocPath);
             for (const file of files) {
                 const srcFile = path.join(iocPath, file);
